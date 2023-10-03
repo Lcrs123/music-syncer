@@ -1,60 +1,26 @@
 from tkinter import Tk, Listbox, StringVar, Frame,Label, Button, Toplevel
-from ytmusicapi import YTMusic
-from abc import ABC
 from functools import partial
-from typing import Self
-
-
-class Syncer(ABC):
-    name: str
-
-    def __new__(cls) -> Self:
-        if not getattr(cls,'name',False):
-            raise NotImplementedError(f'Syncers must have a defined "name" class Attribute')
-        return super().__new__(cls)
-
-    def get_song_list(self) -> list[str]:
-        ...
-
-    def like_song(self,id:str):
-        ...
-
-class YouTubeSyncer(Syncer):
-    name = 'YouTube'
-
-    def __init__(self,APIGetter = YTMusic, auth:str='oauth.json') -> None:
-        self.APIGetter = APIGetter(auth)
-
-    def get_song_list(self) -> list[str]:
-        return [x['title'] for x in self.APIGetter.get_liked_songs(limit=999999)['tracks']]
-
-    def like_song(self,video_id:str):
-        self.APIGetter.rate_song(videoId=video_id,rating='LIKE')
-
-
-class SpotifySyncer(Syncer):
-    name = 'Spotify'
-
-    
-
+from .syncers.base_syncer import Syncer
 
 class Interface(Tk):
-    def __init__(self,syncer_list:list[Syncer]=[YouTubeSyncer()]) -> None:
+    def __init__(self,syncer_list:list[Syncer]) -> None:
         super().__init__()
-        self.left_container = self._create_container('left')
+        self.left_song_list = StringVar()
+        self.left_container = self._create_container('left',self.left_song_list)
         self.button_container = self._create_buttons(self.left_container)
-        self.rigth_container = self._create_container('right')
+        self.right_song_list = StringVar()
+        self.rigth_container = self._create_container('right',self.right_song_list)
         self.syncer_list = syncer_list
         self.chosen_syncer = StringVar(name='chosen_syncer')
 
-    def _create_container(self,side:str) -> Frame:
+    def _create_container(self,side:str, list_var:StringVar) -> Frame:
         container = Frame(self)
         container.pack(side=side,expand=True,fill='both')
         container_label = Label(container,textvariable=StringVar(value='Músicas curtidas:'))
         container_label.pack(side='top')
         sync_button = Button(container,text='Sync',command=partial(self.sync,side=side))
         sync_button.pack(side=side,expand=True)
-        song_container = Listbox(container,listvariable=StringVar(name=f'{side}_song_list'),name=f'{side}_song_container')
+        song_container = Listbox(container,listvariable=list_var)
         song_container.pack(side='right',expand=True,fill='both')
         return container
 
@@ -71,8 +37,20 @@ class Interface(Tk):
         syncer_window = self._open_syncer_window()
         self.wait_window(syncer_window)
         syncer = self._get_syncer_by_name(self.chosen_syncer.get())
-        container = self.left_container if side == 'left' else self.rigth_container
-        container.children[f'{side}_song_container'].setvar(f'{side}_song_list',syncer.get_song_list())
+        song_list_var = self.left_song_list if side == 'left' else self.right_song_list
+        song_list = syncer.get_song_list()
+        song_list = sorted(song_list,key=lambda x:x['artist_name'].lower().strip())
+        song_list_var.set([f'{x['artist_name']} - {x["track_name"]}' for x in song_list])
+        self.show_differences()
+
+    def show_differences(self):
+        print(self.left_song_list.get())
+        if self.left_song_list.get() and self.right_song_list.get():
+            left_set,right_set = set(self.left_song_list.get()), set(self.right_song_list.get())
+            left_set.difference_update(right_set)
+            print(left_set)
+            breakpoint()
+
 
     def _get_syncer_by_name(self,name:str) -> Syncer:
         return [x for x in self.syncer_list if x.name == name].pop()
@@ -91,25 +69,3 @@ class Interface(Tk):
         self.chosen_syncer.set(parent.children['syncer_list'].selection_get())
         parent.destroy()
         return self.chosen_syncer.get()
-
-
-Interface()
-
-main = Tk('Main')
-left_container = Frame(main)
-left_container.pack(side='left',expand=True,fill='y')
-left_container_label = Label(left_container,text=f'Músicas curtidas ({len(song_list)}):')
-left_container_label.pack(side='top')
-song_choices = StringVar(value=song_list)
-song_container = Listbox(left_container,listvariable=song_choices)
-song_container.pack(expand=True,fill='both')
-
-right_container = Frame(main)
-right_container.pack(side='right',expand=True,fill='y')
-right_container_label = Label(right_container,text='Músicas curtidas:')
-right_container_label.pack(side='top')
-song_choices = StringVar(value=song_list)
-song_container = Listbox(right_container,listvariable=song_choices)
-song_container.pack(expand=True,fill='both')
-
-
